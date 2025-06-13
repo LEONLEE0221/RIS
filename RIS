@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Customer Management System</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prop-types/15.8.1/prop-types.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script src="https://unpkg.com/papaparse@latest/papaparse.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useMemo } = React;
+
+    const App = () => {
+      const [data, setData] = useState([]);
+      const [filters, setFilters] = useState({
+        institute: '',
+        faculty: '',
+        department: '',
+        research: ''
+      });
+      const [searchQuery, setSearchQuery] = useState('');
+      const [sortConfig, setSortConfig] = useState({ key: null, direction: null });
+      const [loading, setLoading] = useState(true);
+
+      // Institute color mapping
+      const instituteColors = {
+        CITYU: 'bg-blue-500',
+        CUHK: 'bg-purple-500',
+        HKBU: 'bg-green-500',
+        HKPU: 'bg-red-500',
+        HKU: 'bg-yellow-500',
+        HKUST: 'bg-orange-500',
+        MUST: 'bg-teal-500',
+        UM: 'bg-pink-500'
+      };
+
+      // Research tag color palette
+      const researchTagColors = [
+        'bg-blue-100 text-blue-800',
+        'bg-green-100 text-green-800',
+        'bg-purple-100 text-purple-800',
+        'bg-orange-100 text-orange-800',
+        'bg-pink-100 text-pink-800',
+        'bg-teal-100 text-teal-800'
+      ];
+
+      // Load and parse CSV data
+      useEffect(() => {
+        const csv = loadFileData("AC U.csv");
+        Papa.parse(csv, {
+          header: true,
+          skipEmptyLines: true,
+          transformHeader: (header) => header.trim().replace(/^"|"$/g, ''),
+          transform: (value, header) => value.trim().replace(/^"|"$/g, ''),
+          complete: (results) => {
+            const cleanedData = results.data.map(row => ({
+              ...row,
+              Research1: row['Research 1'] || '',
+              Research2: row['Research 2'] || '',
+              Research3: row['Research 3'] || '',
+              Research4: row['Research 4'] || '',
+              Research5: row['Research 5'] || '',
+              Research6: row['Research 6'] || ''
+            }));
+            setData(cleanedData);
+            setLoading(false);
+          },
+          error: (err) => {
+            console.error('Error parsing CSV:', err);
+            setLoading(false);
+          }
+        });
+      }, []);
+
+      // Compute filtered data based on current filters and search query
+      const filteredData = useMemo(() => {
+        let result = data.filter(row => {
+          const matchesInstitute = !filters.institute || row['Institute'] === filters.institute;
+          const matchesFaculty = !filters.faculty || row['Faculty'] === filters.faculty;
+          const matchesDepartment = !filters.department || row['Department/School'] === filters.department;
+          const matchesResearch = !filters.research || (
+            row['Research1'].toLowerCase() === filters.research.toLowerCase() ||
+            row['Research2'].toLowerCase() === filters.research.toLowerCase() ||
+            row['Research3'].toLowerCase() === filters.research.toLowerCase() ||
+            row['Research4'].toLowerCase() === filters.research.toLowerCase() ||
+            row['Research5'].toLowerCase() === filters.research.toLowerCase() ||
+            row['Research6'].toLowerCase() === filters.research.toLowerCase()
+          );
+          const matchesSearch = !searchQuery || row['PI'].toLowerCase().includes(searchQuery.toLowerCase());
+          return matchesInstitute && matchesFaculty && matchesDepartment && matchesResearch && matchesSearch;
+        });
+
+        // Apply sorting
+        if (sortConfig.key) {
+          result = [...result].sort((a, b) => {
+            const valueA = a[sortConfig.key].toLowerCase();
+            const valueB = b[sortConfig.key].toLowerCase();
+            if (valueA < valueB) return sortConfig.direction === 'asc' ? -1 : 1;
+            if (valueA > valueB) return sortConfig.direction === 'asc' ? 1 : -1;
+            return 0;
+          });
+        }
+
+        return result;
+      }, [data, filters, searchQuery, sortConfig]);
+
+      // Compute dropdown options based on current filters
+      const getDropdownOptions = () => {
+        const institutes = new Set();
+        const faculties = new Set();
+        const departments = new Set();
+        const researches = new Set();
+
+        // Base filtered data for dropdowns, considering active filters
+        const baseFilteredData = data.filter(row => {
+          const matchesInstitute = !filters.institute || row['Institute'] === filters.institute;
+          const matchesFaculty = !filters.faculty || row['Faculty'] === filters.faculty;
+          const matchesDepartment = !filters.department || row['Department/School'] === filters.department;
+          const matchesResearch = !filters.research || (
+            row['Research1'].toLowerCase() === filters.research.toLowerCase() ||
+            row['Research2'].toLowerCase() === filters.research.toLowerCase() ||
+            row['Research3'].toLowerCase() === filters.research.toLowerCase() ||
+            row['Research4'].toLowerCase() === filters.research.toLowerCase() ||
+            row['Research5'].toLowerCase() === filters.research.toLowerCase() ||
+            row['Research6'].toLowerCase() === filters.research.toLowerCase()
+          );
+          return matchesInstitute && matchesFaculty && matchesDepartment && matchesResearch;
+        });
+
+        baseFilteredData.forEach(row => {
+          // Populate institutes
+          if (
+            (!filters.faculty || row['Faculty'] === filters.faculty) &&
+            (!filters.department || row['Department/School'] === filters.department) &&
+            (!filters.research || (
+              row['Research1'].toLowerCase() === filters.research.toLowerCase() ||
+              row['Research2'].toLowerCase() === filters.research.toLowerCase() ||
+              row['Research3'].toLowerCase() === filters.research.toLowerCase() ||
+              row['Research4'].toLowerCase() === filters.research.toLowerCase() ||
+              row['Research5'].toLowerCase() === filters.research.toLowerCase() ||
+              row['Research6'].toLowerCase() === filters.research.toLowerCase()
+            ))
+          ) {
+            institutes.add(row['Institute']);
+          }
+
+          // Populate faculties
+          if (
+            (!filters.institute || row['Institute'] === filters.institute) &&
+            (!filters.department || row['Department/School'] === filters.department) &&
+            (!filters.research || (
+              row['Research1'].toLowerCase() === filters.research.toLowerCase() ||
+              row['Research2'].toLowerCase() === filters.research.toLowerCase() ||
+              row['Research3'].toLowerCase() === filters.research.toLowerCase() ||
+              row['Research4'].toLowerCase() === filters.research.toLowerCase() ||
+              row['Research5'].toLowerCase() === filters.research.toLowerCase() ||
+              row['Research6'].toLowerCase() === filters.research.toLowerCase()
+            ))
+          ) {
+            faculties.add(row['Faculty']);
+          }
+
+          // Populate departments
+          if (
+            (!filters.institute || row['Institute'] === filters.institute) &&
+            (!filters.faculty || row['Faculty'] === filters.faculty) &&
+            (!filters.research || (
+              row['Research1'].toLowerCase() === filters.research.toLowerCase() ||
+              row['Research2'].toLowerCase() === filters.research.toLowerCase() ||
+              row['Research3'].toLowerCase() === filters.research.toLowerCase() ||
+              row['Research4'].toLowerCase() === filters.research.toLowerCase() ||
+              row['Research5'].toLowerCase() === filters.research.toLowerCase() ||
+              row['Research6'].toLowerCase() === filters.research.toLowerCase()
+            ))
+          ) {
+            departments.add(row['Department/School']);
+          }
+
+          // Populate researches
+          if (
+            (!filters.institute || row['Institute'] === filters.institute) &&
+            (!filters.faculty || row['Faculty'] === filters.faculty) &&
+            (!filters.department || row['Department/School'] === filters.department)
+          ) {
+            for (let i = 1; i <= 6; i++) {
+              const research = row[`Research${i}`];
+              if (research && research !== '') {
+                researches.add(research);
+              }
+            }
+          }
+        });
+
+        return {
+          institutes: ['All', ...[...institutes].sort()],
+          faculties: ['All', ...[...faculties].sort()],
+          departments: ['All', ...[...departments].sort()],
+          researches: ['All', ...[...researches].sort()]
+        };
+      };
+
+      const { institutes, faculties, departments, researches } = useMemo(getDropdownOptions, [data, filters]);
+
+      // Handle filter changes
+      const handleFilterChange = (e, filterName) => {
+        const value = e.target.value === 'All' ? '' : e.target.value;
+        if (filterName === 'faculty' && value === '') {
+          // When Faculty is set to All, also set Department/School to All
+          setFilters(prev => ({
+            ...prev,
+            faculty: '',
+            department: ''
+          }));
+        } else {
+          setFilters(prev => ({ ...prev, [filterName]: value }));
+        }
+      };
+
+      // Handle search query changes
+      const handleSearchChange = (e) => {
+        setSearchQuery(e.target.value);
+      };
+
+      // Handle reset all
+      const handleResetAll = () => {
+        setFilters({
+          institute: '',
+          faculty: '',
+          department: '',
+          research: ''
+        });
+        setSearchQuery('');
+        setSortConfig({ key: null, direction: null });
+      };
+
+      // Handle sorting
+      const handleSort = (key) => {
+        setSortConfig(prev => {
+          if (prev.key === key) {
+            if (prev.direction === 'asc') return { key, direction: 'desc' };
+            if (prev.direction === 'desc') return { key: null, direction: null };
+          }
+          return { key, direction: 'asc' };
+        });
+      };
+
+      // Get sort indicator
+      const getSortIndicator = (key) => {
+        if (sortConfig.key !== key) return '';
+        return sortConfig.direction === 'asc' ? ' ▲' : ' ▼';
+      };
+
+      if (loading) {
+        return (
+          <div className="flex justify-center items-center h-screen">
+            <p className="text-xl text-gray-700">Loading...</p>
+          </div>
+        );
+      }
+
+      return (
+        <div className="container mx-auto p-6">
+          <h1 className="text-3xl font-bold text-center mb-8 text-gray-800">Customer Management System</h1>
+          
+          {/* Search Bar and Reset Button */}
+          <div className="flex flex-col sm:flex-row gap-4 mb-6">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Search PI Name</label>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={handleSearchChange}
+                placeholder="Enter PI name..."
+                className="w-full p-3 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div className="flex items-end">
+              <button
+                onClick={handleResetAll}
+                className="bg-red-500 text-white px-4 py-3 rounded-lg hover:bg-red-600 transition-colors"
+              >
+                Reset All
+              </button>
+            </div>
+          </div>
+
+          {/* Filter Dropdowns */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Institute</label>
+              <select
+                value={filters.institute || 'All'}
+                onChange={(e) => handleFilterChange(e, 'institute')}
+                className="w-full p-3 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {institutes.map((inst, idx) => (
+                  <option key={idx} value={inst}>{inst}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Faculty</label>
+              <select
+                value={filters.faculty || 'All'}
+                onChange={(e) => handleFilterChange(e, 'faculty')}
+                className="w-full p-3 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {faculties.map((fac, idx) => (
+                  <option key={idx} value={fac}>{fac}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Department/School</label>
+              <select
+                value={filters.department || 'All'}
+                onChange={(e) => handleFilterChange(e, 'department')}
+                className="w-full p-3 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {departments.map((dep, idx) => (
+                  <option key={idx} value={dep}>{dep}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Research</label>
+              <select
+                value={filters.research || 'All'}
+                onChange={(e) => handleFilterChange(e, 'research')}
+                className="w-full p-3 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {researches.map((res, idx) => (
+                  <option key={idx} value={res}>{res}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Beautified Table */}
+          <div className="overflow-x-auto bg-white rounded-lg shadow-lg">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-100">
+                <tr>
+                  <th
+                    className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:text-gray-800"
+                    onClick={() => handleSort('PI')}
+                  >
+                    PI {getSortIndicator('PI')}
+                  </th>
+                  <th
+                    className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:text-gray-800"
+                    onClick={() => handleSort('Institute')}
+                  >
+                    Institute {getSortIndicator('Institute')}
+                  </th>
+                  <th
+                    className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:text-gray-800"
+                    onClick={() => handleSort('Faculty')}
+                  >
+                    Faculty {getSortIndicator('Faculty')}
+                  </th>
+                  <th
+                    className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider cursor-pointer hover:text-gray-800"
+                    onClick={() => handleSort('Department/School')}
+                  >
+                    Department/School {getSortIndicator('Department/School')}
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    Research Areas
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {filteredData.map((row, idx) => (
+                  <tr key={idx} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{row['PI']}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <span className={`${instituteColors[row['Institute']] || 'bg-gray-500'} text-white text-xs font-medium px-2.5 py-0.5 rounded-full`}>
+                        {row['Institute']}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{row['Faculty']}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{row['Department/School']}</td>
+                    <td className="px-6 py-4 text-sm text-gray-900">
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          row['Research1'],
+                          row['Research2'],
+                          row['Research3'],
+                          row['Research4'],
+                          row['Research5'],
+                          row['Research6']
+                        ].filter(Boolean).map((research, rIdx) => (
+                          <span
+                            key={rIdx}
+                            className={`inline-block ${researchTagColors[rIdx % researchTagColors.length]} text-xs font-medium px-2.5 py-0.5 rounded-full`}
+                          >
+                            {research}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {filteredData.length === 0 && (
+              <p className="text-center py-6 text-gray-500 text-sm">No data matches the selected filters or search query.</p>
+            )}
+          </div>
+        </div>
+      );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
