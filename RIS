@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Customer Information System</title>
+  <title>Product Recommendation System</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prop-types/15.8.1/prop-types.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <script src="https://unpkg.com/papaparse@latest/papaparse.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;707;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     body {
       font-family: 'Inter', sans-serif;
@@ -90,21 +90,14 @@
       'bg-gradient-to-r from-fuchsia-200 to-fuchsia-300 text-fuchsia-900'
     ];
 
-    // Product tag colors
-    const productColors = [
-      'bg-gradient-to-r from-sky-200 to-sky-300 text-sky-900',
-      'bg-gradient-to-r from-violet-200 to-violet-300 text-violet-900',
-      'bg-gradient-to-r from-rose-200 to-rose-300 text-rose-900',
-      'bg-gradient-to-r from-emerald-200 to-emerald-300 text-emerald-900',
-      'bg-gradient-to-r from-amber-200 to-amber-300 text-amber-900',
-      'bg-gradient-to-r from-cyan-200 to-cyan-300 text-cyan-900',
-      'bg-gradient-to-r from-lime-200 to-lime-300 text-lime-900'
-    ];
+    // Product tag color
+    const productColor = 'bg-gradient-to-r from-green-200 to-green-300 text-green-900';
 
     // Main App component
     function App() {
-      const [data, setData] = React.useState([]);
-      const [researchProducts, setResearchProducts] = React.useState({});
+      const [piData, setPiData] = React.useState([]);
+      const [topSellerData, setTopSellerData] = React.useState([]);
+      const [researchV2Data, setResearchV2Data] = React.useState([]);
       const [loading, setLoading] = React.useState(true);
       const [searchQuery, setSearchQuery] = React.useState('');
       const [filters, setFilters] = React.useState({
@@ -120,11 +113,12 @@
         research: ''
       });
       const [openDropdown, setOpenDropdown] = React.useState(null);
+      const [expandedProducts, setExpandedProducts] = React.useState({});
 
-      // Load and parse AC U.csv
+      // Load and parse CSV data
       React.useEffect(() => {
-        const csv = loadFileData("AC U.csv");
-        Papa.parse(csv, {
+        const piCsv = loadFileData("AC U.csv");
+        Papa.parse(piCsv, {
           header: true,
           skipEmptyLines: true,
           transformHeader: header => header.trim().replace(/^"|"$/g, ''),
@@ -135,8 +129,42 @@
             return cleaned === '' ? null : cleaned;
           },
           complete: (results) => {
-            setData(results.data);
-            setLoading(false);
+            setPiData(results.data);
+            const topSellerCsv = loadFileData("Top Seller-SC.csv");
+            Papa.parse(topSellerCsv, {
+              header: true,
+              skipEmptyLines: true,
+              transformHeader: header => header.trim().replace(/^"|"$/g, ''),
+              transform: (value, header) => {
+                let cleaned = value.trim().replace(/^"|"$/g, '');
+                return cleaned === '' ? null : cleaned;
+              },
+              complete: (topSellerResults) => {
+                setTopSellerData(topSellerResults.data);
+                const researchV2Csv = loadFileData("Research v2.csv");
+                Papa.parse(researchV2Csv, {
+                  header: true,
+                  skipEmptyLines: true,
+                  transformHeader: header => header.trim().replace(/^"|"$/g, ''),
+                  transform: (value, header) => {
+                    let cleaned = value.trim().replace(/^"|"$/g, '');
+                    return cleaned === '' ? null : cleaned;
+                  },
+                  complete: (researchV2Results) => {
+                    setResearchV2Data(researchV2Results.data);
+                    setLoading(false);
+                  },
+                  error: (err) => {
+                    console.error('Error parsing Research v2.csv:', err);
+                    setLoading(false);
+                  }
+                });
+              },
+              error: (err) => {
+                console.error('Error parsing Top Seller-SC.csv:', err);
+                setLoading(false);
+              }
+            });
           },
           error: (err) => {
             console.error('Error parsing AC U.csv:', err);
@@ -145,50 +173,95 @@
         });
       }, []);
 
-      // Load and parse Research v2.csv
-      React.useEffect(() => {
-        const csv = loadFileData("Research v2.csv");
-        Papa.parse(csv, {
-          header: true,
-          skipEmptyLines: true,
-          transformHeader: header => header.trim().replace(/^"|"$/g, ''),
-          transform: (value) => {
-            let cleaned = value.trim().replace(/^"|"$/g, '');
-            cleaned = cleaned.replace(/Modificationsss/gi, 'Modifications');
-            cleaned = cleaned.replace(/Variants/gi, 'Variants');
-            return cleaned === '' ? null : cleaned;
-          },
-          complete: (results) => {
-            const productMap = {};
-            results.data.forEach(row => {
-              const research = row['Research'];
-              const products = [
-                row['Product'], row['Product 1'], row['Product 2'],
-                row['Product 3'], row['Product 4'], row['Product 5']
-              ].filter(Boolean);
-              productMap[research] = products;
-            });
-            setResearchProducts(productMap);
-          },
-          error: (err) => {
-            console.error('Error parsing Research v2.csv:', err);
-          }
+      // Compute product recommendations
+      const getRecommendedProducts = React.useMemo(() => {
+        return (piRow) => {
+          const piResearch = [
+            piRow['Research 1'], piRow['Research 2'], piRow['Research 3'],
+            piRow['Research 4'], piRow['Research 5'], piRow['Research 6']
+          ].filter(Boolean).map(r => r.toLowerCase());
+          if (piResearch.length === 0) return [];
+
+          // Match Top Seller-SC.csv products
+          const topSellerProducts = topSellerData
+            .filter(product => {
+              const productResearch = [
+                product['Research Area'], product['Research Area 1'], product['Research Area 2'],
+                product['Research Area 3'], product['Research Area 4'], product['Research Area 5'],
+                product['Research Area 6'], product['Research Area 7'], product['Research Area 8'],
+                product['Research Area 9'], product['Research Area 10']
+              ].filter(Boolean).map(r => r.toLowerCase());
+              return piResearch.some(pr => productResearch.some(prodR => prodR.includes(pr)));
+            })
+            .map(product => product['Product']);
+
+          // Match Research v2.csv products
+          const researchV2Products = researchV2Data
+            .filter(product => {
+              const productResearch = product['Research']?.toLowerCase();
+              return piResearch.includes(productResearch);
+            })
+            .flatMap(product => [
+              product['Product'], product['Product 1'], product['Product 2'],
+              product['Product 3'], product['Product 4'], product['Product 5']
+            ].filter(Boolean));
+
+          // Combine and deduplicate products
+          return [...new Set([...topSellerProducts, ...researchV2Products])];
+        };
+      }, [topSellerData, researchV2Data]);
+
+      // Generate CSV for filtered data
+      const generateCSV = () => {
+        const headers = ['PI', 'Institute', 'Faculty', 'Department', 'Research Areas', 'Recommended Products'];
+        const rows = filteredData.map(row => {
+          const researchAreas = [
+            row['Research 1'], row['Research 2'], row['Research 3'],
+            row['Research 4'], row['Research 5'], row['Research 6']
+          ].filter(Boolean).join(', ');
+          const products = getRecommendedProducts(row).join(', ');
+          return [
+            `"${row['PI']?.replace(/"/g, '""') || ''}"`,
+            `"${row['Institute']?.replace(/"/g, '""') || ''}"`,
+            `"${row['Faculty']?.replace(/"/g, '""') || ''}"`,
+            `"${row['Department']?.replace(/"/g, '""') || ''}"`,
+            `"${researchAreas.replace(/"/g, '""')}"`,
+            `"${products.replace(/"/g, '""')}"`
+          ];
         });
-      }, []);
+        const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', 'filtered_results.csv');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      };
+
+      // Toggle expand/collapse for products
+      const toggleExpandProducts = (index) => {
+        setExpandedProducts(prev => ({
+          ...prev,
+          [index]: !prev[index]
+        }));
+      };
 
       // Compute dynamic filter options
       const getFilteredData = () => {
-        return data.filter(row => {
+        return piData.filter(row => {
           const matchesInstitute = filters.institute.length === 0 || filters.institute.includes(row['Institute']);
           return matchesInstitute;
         });
       };
 
-      const institutes = [...new Set(data.map(row => row['Institute']))].filter(Boolean).sort();
+      const institutes = [...new Set(piData.map(row => row['Institute']))].filter(Boolean).sort();
       const faculties = [...new Set(getFilteredData().map(row => row['Faculty']))].filter(Boolean).sort();
       const departments = [...new Set(getFilteredData().map(row => row['Department']))].filter(Boolean).sort();
       const researchAreas = [...new Set(
-        data.flatMap(row => [
+        piData.flatMap(row => [
           row['Research 1'], row['Research 2'], row['Research 3'],
           row['Research 4'], row['Research 5'], row['Research 6']
         ]).filter(Boolean)
@@ -203,35 +276,8 @@
         return map;
       }, [researchAreas]);
 
-      // Assign colors to products
-      const productColorMap = React.useMemo(() => {
-        const uniqueProducts = [...new Set(
-          Object.values(researchProducts).flat()
-        )].sort();
-        const map = {};
-        uniqueProducts.forEach((product, index) => {
-          map[product] = productColors[index % productColors.length];
-        });
-        return map;
-      }, [researchProducts]);
-
-      // Generate product recommendations for a PI
-      const getProductRecommendations = (row) => {
-        const piResearch = [
-          row['Research 1'], row['Research 2'], row['Research 3'],
-          row['Research 4'], row['Research 5'], row['Research 6']
-        ].filter(Boolean);
-        const recommendedProducts = new Set();
-        piResearch.forEach(research => {
-          if (researchProducts[research]) {
-            researchProducts[research].forEach(product => recommendedProducts.add(product));
-          }
-        });
-        return [...recommendedProducts].sort();
-      };
-
       // Filter data based on search and filters
-      const filteredData = data.filter(row => {
+      const filteredData = piData.filter(row => {
         const matchesSearch = !searchQuery || 
           (row['PI'] && row['PI'].toLowerCase().includes(searchQuery.toLowerCase()));
         const matchesInstitute = filters.institute.length === 0 || filters.institute.includes(row['Institute']);
@@ -423,7 +469,7 @@
       return (
         <div className="container mx-auto p-8 max-w-7xl fade-in">
           <div className="bg-white rounded-2xl shadow-xl p-8 mb-8">
-            <h1 className="text-4xl font-extrabold text-gray-900 mb-8 tracking-tight">Customer Information System</h1>
+            <h1 className="text-4xl font-extrabold text-gray-900 mb-8 tracking-tight">Product Recommendation System</h1>
             
             {/* Search Bar */}
             <div className="mb-8">
@@ -456,8 +502,19 @@
             </div>
           </div>
 
-          {/* Data Table */}
+          {/* Download CSV Button and Data Table */}
           <div className="bg-white rounded-2xl shadow-xl overflow-hidden fade-in">
+            <div className="p-5 flex justify-end">
+              <button
+                onClick={generateCSV}
+                className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition duration-300 font-medium"
+                aria-label="Download filtered results as CSV"
+                tabIndex={0}
+                onKeyDown={(e) => e.key === 'Enter' && generateCSV()}
+              >
+                Download CSV
+              </button>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-gray-100">
@@ -471,44 +528,62 @@
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredData.map((row, index) => (
-                    <tr
-                      key={index}
-                      className={`border-b border-gray-200 hover:bg-gray-50 transition duration-300 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}
-                    >
-                      <td className="p-5 text-gray-800 text-lg">{row['PI']}</td>
-                      <td className="p-5">
-                        <span className={`px-4 py-2 rounded-full text-sm font-semibold tag-hover ${instituteColors[row['Institute']]}`}>
-                          {row['Institute']}
-                        </span>
-                      </td>
-                      <td className="p-5 text-gray-800 text-lg">{row['Faculty']}</td>
-                      <td className="p-5 text-gray-800 text-lg">{row['Department']}</td>
-                      <td className="p-5">
-                        {[
-                          row['Research 1'], row['Research 2'], row['Research 3'],
-                          row['Research 4'], row['Research 5'], row['Research 6']
-                        ].filter(Boolean).map((area, i) => (
-                          <span
-                            key={i}
-                            className={`inline-block px-4 py-2 rounded-full text-sm font-semibold mr-2 mb-2 tag-hover ${researchColorMap[area]}`}
-                          >
-                            {area}
+                  {filteredData.map((row, index) => {
+                    const products = getRecommendedProducts(row);
+                    const isExpanded = expandedProducts[index];
+                    const displayProducts = isExpanded ? products : products.slice(0, 4);
+                    return (
+                      <tr
+                        key={index}
+                        className={`border-b border-gray-200 hover:bg-gray-50 transition duration-300 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}
+                      >
+                        <td className="p-5 text-gray-800 text-lg">{row['PI']}</td>
+                        <td className="p-5">
+                          <span className={`px-4 py-2 rounded-full text-sm font-semibold tag-hover ${instituteColors[row['Institute']]}`}>
+                            {row['Institute']}
                           </span>
-                        ))}
-                      </td>
-                      <td className="p-5">
-                        {getProductRecommendations(row).map((product, i) => (
-                          <span
-                            key={i}
-                            className={`inline-block px-4 py-2 rounded-full text-sm font-semibold mr-2 mb-2 tag-hover ${productColorMap[product]}`}
-                          >
-                            {product}
-                          </span>
-                        ))}
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="p-5 text-gray-800 text-lg">{row['Faculty']}</td>
+                        <td className="p-5 text-gray-800 text-lg">{row['Department']}</td>
+                        <td className="p-5">
+                          {[
+                            row['Research 1'], row['Research 2'], row['Research 3'],
+                            row['Research 4'], row['Research 5'], row['Research 6']
+                          ].filter(Boolean).map((area, i) => (
+                            <span
+                              key={i}
+                              className={`inline-block px-4 py-2 rounded-full text-sm font-semibold mr-2 mb-2 tag-hover ${researchColorMap[area]}`}
+                            >
+                              {area}
+                            </span>
+                          ))}
+                        </td>
+                        <td className="p-5">
+                          <div className="flex flex-wrap gap-2">
+                            {displayProducts.map((product, i) => (
+                              <span
+                                key={i}
+                                className={`inline-block px-4 py-2 rounded-full text-sm font-semibold tag-hover ${productColor}`}
+                              >
+                                {product}
+                              </span>
+                            ))}
+                          </div>
+                          {products.length > 4 && (
+                            <button
+                              onClick={() => toggleExpandProducts(index)}
+                              className="mt-2 px-3 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition duration-300 font-medium text-sm"
+                              aria-label={isExpanded ? "Show fewer products" : "Show more products"}
+                              tabIndex={0}
+                              onKeyDown={(e) => e.key === 'Enter' && toggleExpandProducts(index)}
+                            >
+                              {isExpanded ? 'Show Less' : 'Show More'}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
